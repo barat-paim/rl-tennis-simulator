@@ -22,3 +22,13 @@ env/
 *.cursor/
 *.cursor.log
 .cursor/
+
+# Model zip files
+*.zip
+*.zip.part
+tennis_ppo_model.zip
+
+# Ignore tennis_tensorboard directory
+tennis_tensorboard/
+docs/
+docs/tenn-2.md

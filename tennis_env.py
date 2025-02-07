@@ -14,9 +14,11 @@ class TennisEnv(gym.Env):
 
         # Define action space: 0 = left, 1 = stay, 2 = right.
         self.action_space = spaces.Discrete(3)
-        # Observation: [ball.x, ball.y, ball.vx, ball.vy, paddle.x, paddle_vx]
-        low = np.array([0, 0, -np.inf, -np.inf, 0, -np.inf], dtype=np.float32)
-        high = np.array([800, 400, np.inf, np.inf, 800, np.inf], dtype=np.float32)
+        # Observation: [normalized ball.x, normalized ball.y, ball.vx, ball.vy, normalized paddle.x, paddle_vx]
+        # Normalized positions (ball.x, ball.y, paddle.x) are scaled to the range [-1, 1].
+        # For velocities we assume: ball.vx, ball.vy in [-1000, 1000] and paddle_vx in [-20, 20].
+        low = np.array([-1, -1, -1000, -1000, -1, -20], dtype=np.float32)
+        high = np.array([1, 1, 1000, 1000, 1, 20], dtype=np.float32)
         self.observation_space = spaces.Box(low=low, high=high, dtype=np.float32)
 
         if self.render_mode:
@@ -103,21 +105,21 @@ class TennisEnv(gym.Env):
         # Normalize positions to [-1, 1]
         normalized_obs = raw_obs.copy()
         normalized_obs[0] = (raw_obs[0] / 800.0) * 2 - 1  # ball x
-        normalized_obs[1] = (raw_obs[1] / 400.0) * 2 - 1  # ball y
+        normalized_obs[1] = np.clip((raw_obs[1] / 400.0) * 2 - 1, -1, 1)  # clamped ball y
         normalized_obs[4] = (raw_obs[4] / 800.0) * 2 - 1  # paddle x
         # Velocities remain unchanged
         return normalized_obs
 
     def step(self, action):
-        # Update paddle position based on action.
+        move_speed = 15 if self.render_mode else 10  # Compensate for rendering latency
         if action == 0:
-            self.paddle.position = (max(50, self.paddle.position.x - 10), self.paddle.position.y)
+            self.paddle.position = (max(50, self.paddle.position.x - move_speed), self.paddle.position.y)
         elif action == 2:
-            self.paddle.position = (min(750, self.paddle.position.x + 10), self.paddle.position.y)
+            self.paddle.position = (min(750, self.paddle.position.x + move_speed), self.paddle.position.y)
         # No movement for action == 1.
 
-        # Advance the physics simulation.
-        self.space.step(1/60.0)
+        # Sync physics with rendering mode
+        self.space.step(1/60.0 if self.render_mode else 1/1000.0)
 
         # Initialize a small time-step penalty to encourage faster responses.
         reward = -0.01
