@@ -82,6 +82,7 @@ class TennisEnv(gym.Env):
                 self.space.remove(shape)
             self.space.remove(obj)
         self._setup_world()
+        self.episode_hits = 0  # <-- Initialize the hit counter for the episode
         return self._get_obs(), {}
 
     def _get_obs(self):
@@ -90,7 +91,7 @@ class TennisEnv(gym.Env):
         paddle_vx = current_paddle_x - self.last_paddle_x
         self.last_paddle_x = current_paddle_x
 
-        obs = np.array([
+        raw_obs = np.array([
             self.ball.position.x,
             self.ball.position.y,
             self.ball.velocity.x,
@@ -98,7 +99,14 @@ class TennisEnv(gym.Env):
             self.paddle.position.x,
             paddle_vx
         ], dtype=np.float32)
-        return obs
+        
+        # Normalize positions to [-1, 1]
+        normalized_obs = raw_obs.copy()
+        normalized_obs[0] = (raw_obs[0] / 800.0) * 2 - 1  # ball x
+        normalized_obs[1] = (raw_obs[1] / 400.0) * 2 - 1  # ball y
+        normalized_obs[4] = (raw_obs[4] / 800.0) * 2 - 1  # paddle x
+        # Velocities remain unchanged
+        return normalized_obs
 
     def step(self, action):
         # Update paddle position based on action.
@@ -111,19 +119,33 @@ class TennisEnv(gym.Env):
         # Advance the physics simulation.
         self.space.step(1/60.0)
 
-        # Check termination: if ball goes below the bottom.
+        # Initialize a small time-step penalty to encourage faster responses.
+        reward = -0.01
         done = False
-        reward = 0.0
+
+        # Check for paddle hit using AABB collision.
+        if self._check_paddle_hit():
+            self.episode_hits += 1
+            # Compute additional bonus based on how centered the ball is relative to the paddle.
+            ball_x = self.ball.position.x
+            paddle_x = self.paddle.position.x
+            dist_error = abs(ball_x - paddle_x)
+            bonus = max(0, 1 - (dist_error / 100))  # bonus gets lower when ball is away from center (scale factor: 100)
+            # Base reward + bonus for consecutive hits.
+            reward = 1.0 + (self.episode_hits * 0.1) + bonus
+
+        # Check termination: if the ball goes below the bottom, consider it a miss.
         if self.ball.position.y > 400:
             done = True
             reward = -1.0
-
-        # Check for paddle hit (simple AABB check).
-        if self._check_paddle_hit():
-            reward = 1.0
+            info = {"episode_hits": self.episode_hits}
+            # Log the episode's hit count at termination.
+            print(f"Episode ended. Total consecutive hits: {self.episode_hits}")
+        else:
+            info = {}
 
         obs = self._get_obs()
-        return obs, reward, done, False, {}
+        return obs, reward, done, False, info
 
     def _check_paddle_hit(self):
         ball_x, ball_y = self.ball.position

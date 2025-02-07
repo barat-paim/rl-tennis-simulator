@@ -19,3 +19,6 @@ env/
 # Other files
 *.pkl
 *.h5 
+*.cursor/
+*.cursor.log
+.cursor/
